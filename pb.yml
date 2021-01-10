@@ -1,0 +1,77 @@
+---
+- name: install monitoring sys on BBB servers
+  hosts: '{{hosts}}'
+  gather_facts: false
+
+  tasks:
+  - name: install python3-pip zabbix-agent
+    apt:
+      name:
+        - python3-pip
+        - zabbix-agent
+      state: latest
+
+  - name: copy bbb-monitoring directory to new host
+    copy: src=bbb-monitoring dest=/root mode=0755
+
+  - name: copy zabbix agent config
+    copy: src=zabbix_agentd.conf dest=/etc/zabbix mode=0755
+
+  - name: Replace Hostname in zabbix config
+    replace:
+      path: /etc/zabbix/zabbix_agentd.conf
+      regexp: 'ZBX_HOSTNAME'
+      replace: '{{ZBX_HOSTNAME}}'
+
+  - name: Replace zabbix server address in zabbix config
+    replace:
+      path: /etc/zabbix/zabbix_agentd.conf
+      regexp: 'ZBX_SERVER'
+      replace: '{{ZBX_SERVER}}'
+
+  - name: Replace BBB_URL variable 
+    replace:
+      path: /root/bbb-monitoring/bbb-exporter/settings.py
+      regexp: 'BBB_URL'
+      replace: '{{BBB_URL}}'
+
+  - name: Replace BBB_SECERT variable 
+    replace:
+      path: /root/bbb-monitoring/bbb-exporter/settings.py
+      regexp: 'BBB_SECRET'
+      replace: '{{BBB_SECRET}}'
+
+  - name: config zabbix sudoers
+    copy: src=zabbix dest=/etc/sudoers.d/ mode=0755
+
+  - name: run pip3 update
+    command: pip3 install --upgrade pip
+
+  - name: run pip3 install command
+    command: pip3 install -r requirements.txt
+    args:
+      chdir: /root/bbb-monitoring
+
+  - name: configure crontab
+    cron: 
+      name: "### * * * * * python3 /root/bbb-monitoring/bbb-exporter/server.py "
+      minute: "*"
+      hour: "*"
+      day: "*"
+      month: "*"
+      weekday: "*"
+      job: "python3 /root/bbb-monitoring/bbb-exporter/server.py"
+    notify:
+    - restart crontab
+
+  - name: configure zabbix service 
+    copy: src=bbb.conf dest=/etc/zabbix/zabbix_agentd.conf.d
+    notify:
+    - restart zabbix
+
+  handlers:
+  - name: restart zabbix
+    service: name=zabbix-agent state=restarted
+
+  - name: restart crontab
+    service: name=cron state=restarted
